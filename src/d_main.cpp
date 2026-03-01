@@ -1225,9 +1225,9 @@ void D_DoomLoop ()
 
 	vid_cursor->Callback();
 
-	// Windows IPC Pipe + GZDoom API
+	// IPC Pipe + GZDoom API
 	// Open the pipe 'GZD' for communication
-	g_Pipe.Open("GZD");	int pipe_counter = 0;
+	g_Pipe.Open("GZD");
 	
 
 
@@ -1265,55 +1265,7 @@ void D_DoomLoop ()
 			}
 			else
 			{
-				TryRunTics (); // will run at least one tic
-				
-				// Windows IPC Pipe + GZDoom API
-				pipe_counter++;
-				if (pipe_counter > 0) // Adjust this value to change pipe read/write frequency
-				{
-					// Windows IPC Pipe
-					// Clear Write Queue
-					if (!g_Pipe.writeQueue.empty()) 
-					{
-						g_Pipe.writeQueue.clear();
-						g_Pipe.pipeStatus.writeQueueSize = 0;
-					}
-
-					// Windows IPC Pipe
-					// Read
-					g_Pipe.Read();
-					
-					// GZDoom API
-					// Process Read Data, check for Console Commands
-					if (!g_Pipe.readData.empty()) {
-						g_Pipe.ProcessPipeCommand(g_Pipe.readData);
-						g_Pipe.readData.clear();
-					}
-					// Send Console Command Reply to Pipe Write Buffer
-					if (!g_Pipe.CCMD_ReplyToClient.empty()) {
-						g_Pipe.writeData.clear();
-						g_Pipe.writeData = g_Pipe.CCMD_ReplyToClient;
-						g_Pipe.CCMD_ReplyToClient.clear();
-					}
-					// Windows IPC Pipe
-					// Write Pipe Buffer
-					if (!g_Pipe.writeData.empty()) 
-					{
-						g_Pipe.Write();
-						if (g_Pipe.pipeStatus.writeCompleted) {
-							g_Pipe.writeData.clear();
-						}
-					}
-					pipe_counter = 0; // reset counter
-				}//end if (pipe_counter > 0)
-				// End Windows IPC Pipe + GZDoom API
-				
-
-				
-
-				
-				
-
+				TryRunTics (); // will run at least one tic				
 			}
 			// Update display, next frame, with current state.
 			I_StartTic ();
@@ -1325,6 +1277,37 @@ void D_DoomLoop ()
 				wantToRestart = false;
 				return;
 			}
+			// IPC Pipe + GZDoom API
+			// Clear Write Queue
+			if (!g_Pipe.writeQueue.empty())
+			{
+				g_Pipe.writeQueue.clear();
+				g_Pipe.pipeStatus.writeQueueSize = 0;
+			}
+			// Read
+			g_Pipe.Read();
+
+			// GZDoom API
+			// Process Read Data, check for Console Commands
+			if (!g_Pipe.readData.empty()) {
+				g_Pipe.ProcessPipeCommand(g_Pipe.readData);
+				g_Pipe.readData.clear();
+			}
+			// Send Console Command Reply to Pipe Write Buffer
+			if (!g_Pipe.CCMD_ReplyToClient.empty()) {
+				g_Pipe.writeData.clear();
+				g_Pipe.writeData = g_Pipe.CCMD_ReplyToClient;
+				g_Pipe.CCMD_ReplyToClient.clear();
+			}
+			// Write Pipe Buffer
+			if (!g_Pipe.writeData.empty())
+			{
+				g_Pipe.Write();
+				if (g_Pipe.pipeStatus.writeCompleted) {
+					g_Pipe.writeData.clear();
+				}
+			}
+			// End IPC Pipe + GZDoom API
 		}
 		catch (const CRecoverableError &error)
 		{
