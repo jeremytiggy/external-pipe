@@ -49,9 +49,6 @@ COMMAND <command 1>; <command 2>; …		Executing Command: "<command 1>; <command
                                                                                                         when separated by semi-colons
 
 */
-
-// Add this method declaration to your ExternalPipe class
-
     
 
 class ExternalPipe
