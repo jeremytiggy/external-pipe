@@ -185,8 +185,28 @@ bool OkForLocalization(FTextureID texnum, const char* substitute);
 
 // Windows IPC Pipe + GZDoom API
 #include "externalpipe.h" // class
+CVAR(Int, pipe_cycleTicksDisconnected, 35, CVAR_GLOBALCONFIG);	// how many ticks to wait between new connection checks															
+CVAR(Int, pipe_cycleTicksConnected, 3, CVAR_GLOBALCONFIG);		// how many ticks to wait between Pipe Reads while a connection is active
+CVAR(Int, pipe_noDataFrames, 10, CVAR_GLOBALCONFIG);			// how many consecutive frames of no data received to wait before switching to the "no data" idle state
+CVAR(Int, pipe_cycleTicksNoData, 7, CVAR_GLOBALCONFIG);         // how many ticks to wait between Pipe Reads when in the "no data" idle state (after being connected but receiving no data for a while)
+CVAR(Bool, pipe_log, false, CVAR_GLOBALCONFIG);					// whether to log pipe activity to the console
+CVAR(Bool, pipe_logConsole, false, CVAR_GLOBALCONFIG);		// 0 - log only to file, 1 - log to file and console
+CVAR(Bool, pipe_enable, true, CVAR_GLOBALCONFIG);			// whether to enable the pipe at all. 
+															// This is mostly for testing and debugging, but it can also be 
+															// used to disable the pipe in cases where it might cause issues (e.g. on platforms where it's not fully supported
+															// , or when using mods that are known to cause issues with the pipe)
+CVAR(Bool, pipe_enabled, false, CVAR_NOSAVE);				// whether the pipe is currently enabled. 
+CVAR(Bool, pipe_open, false, CVAR_NOSAVE);					// whether the pipe is currently open. This is set by the pipe code itself
+CVAR(Bool, pipe_connected, false, CVAR_NOSAVE);				// whether the pipe is currently connected. This is set by the pipe code itself
+CVAR(Int, pipe_latencyms, 0, CVAR_NOSAVE);					// latency of the last completed pipe operation in milliseconds
+CVAR(Bool, pipe_debug, false, CVAR_NOSAVE);					// enable custom debugging functions (remove for production)
+CVAR(String, pipe_readData, "", CVAR_NOSAVE);				// the command received from the other process, to be processed in the main loop. This is set by the pipe code itself
+CVAR(String, pipe_writeData, "", CVAR_NOSAVE);				// the data to be sent to the other process, to be set by the main loop. This is read by the pipe code itself
 static ExternalPipe g_Pipe; // class instance
 
+// @JeremyTiggy Helpers
+CVAR(Bool, log_startedWithCommandline, false, CVAR_NOSET);	// true if the commandline incluided any valid +logfile arguments
+CVAR(String, log_filename, "", CVAR_NOSET);					// the filename of the log file being used, if any
 
 // PRIVATE FUNCTION PROTOTYPES ---------------------------------------------
 
@@ -1195,7 +1215,7 @@ void D_ErrorCleanup ()
 	insave = false;
 	ClearGlobalVMStack();
 	
-	// Windows IPC Pipe + GZDoom API
+	// IPC Pipe + GZDoom API
 	// Close the pipe on error cleanup
 	g_Pipe.Close();
 	
@@ -1227,7 +1247,13 @@ void D_DoomLoop ()
 
 	// IPC Pipe + GZDoom API
 	// Open the pipe 'GZD' for communication
-	g_Pipe.Open("GZD");
+	int pipe_noDataFrameCount = 0;
+	int pipe_cycleTimeDisconnected = ((pipe_cycleTicksDisconnected * 1000) / 35); // ms delay when pipe is not connected
+	int pipe_cycleTimeNoData = ((pipe_cycleTicksNoData * 1000) / 35); // ms delay when pipe is connected but no data has come in for a while (based on ticks per second [35])
+	int pipe_cycleTimeConnected = ((pipe_cycleTicksConnected * 1000) / 35); // ms delay (based on ticks per second [35]) when pipe is connected and data is available
+	int pipe_cycleTimeSetpoint = 100;
+	bool pipe_readAndWrite = false;
+	if (pipe_enable) g_Pipe.Open("GZD"); // Windows IPC Pipe
 	
 
 
@@ -1258,6 +1284,7 @@ void D_DoomLoop ()
 				G_Ticker ();
 				// [RH] Use the consoleplayer's camera to update sounds
 				S_UpdateSounds (players[consoleplayer].camera);	// move positional sounds
+
 				gametic++;
 				maketic++;
 				GC::CheckGC ();
@@ -1265,7 +1292,103 @@ void D_DoomLoop ()
 			}
 			else
 			{
-				TryRunTics (); // will run at least one tic				
+				TryRunTics (); // will run at least one tic
+
+				// IPC Pipe + GZDoom API
+				// Update the pipe_enabled variable with the current value of the pipe_enable CVAR
+				
+				if (pipe_enable) { pipe_enabled = true; }
+				else { pipe_enabled = false; } 
+				if (!pipe_enable && g_Pipe.pipeStatus.open) {
+					g_Pipe.Close();
+				}
+				if (pipe_enable && !g_Pipe.pipeStatus.open) {
+					g_Pipe.Open("GZD");
+				}
+				if (pipe_enable) {
+					g_Pipe.logging = pipe_log; // Set logging to true or false based on the pipe_log variable
+					g_Pipe.loggingHigh = pipe_logConsole;
+
+					// Adjust the cycle delay based on the connection status and data availability
+					
+					if (!g_Pipe.pipeStatus.connected) {
+						pipe_cycleTimeDisconnected = ((pipe_cycleTicksDisconnected * 1000) / 35);
+						pipe_cycleTimeSetpoint = pipe_cycleTimeDisconnected;
+					}
+					if (g_Pipe.pipeStatus.connected) {
+						if (pipe_noDataFrameCount >= pipe_noDataFrames) {
+							pipe_cycleTimeNoData = ((pipe_cycleTicksNoData * 1000) / 35);
+							pipe_cycleTimeSetpoint = pipe_cycleTimeNoData;
+						}
+						else {
+							pipe_cycleTimeConnected = ((pipe_cycleTicksConnected * 1000) / 35);
+							pipe_cycleTimeSetpoint = pipe_cycleTimeConnected;
+						}
+					}
+					
+
+					if (g_Pipe.CycleTimer(pipe_cycleTimeSetpoint)) {
+
+						// Measure Latency
+						g_Pipe.MeasureLatency();
+						pipe_latencyms = g_Pipe.pipeStatus.latency_ms;
+						
+						// Check if the pipe is connected before trying to read/write
+						if (!g_Pipe.pipeStatus.connected) {
+							if (g_Pipe.Connect()) {
+								pipe_readAndWrite = g_Pipe.CheckIfPipeIsConnected();
+							}
+						}
+						if (g_Pipe.pipeStatus.connected) {
+							pipe_readAndWrite = true;
+						}
+						if (pipe_readAndWrite) {
+
+							// Enforce Pipe PULL behaviour by only executing full read-write when data is available to read from the pipe. 
+							// This prevents the game from flooding the pipe with data if the client is not reading from it.
+							// Clear Write Queue
+							g_Pipe.pipeStatus.PeekTotalBytesAvailable = 0;
+							g_Pipe.pipeStatus.peekCompleted = false;
+							if (g_Pipe.Peek()) {
+								
+								// Read
+								g_Pipe.Read();
+
+								// GZDoom API
+								// Process Read Data, check for Console Commands
+								if (!g_Pipe.readData.empty()) {
+									pipe_readData = g_Pipe.readData.c_str(); // Store the read data in a separate variable for processing, this allows us to clear the pipe buffer before processing in case processing takes a long time and we want to continue reading from the pipe without waiting for processing to finish.
+									g_Pipe.ProcessPipeCommand(g_Pipe.readData);
+									g_Pipe.readData.clear();
+								}
+								// Send Console Command Reply to Pipe Write Buffer
+								if (!g_Pipe.CCMD_ReplyToClient.empty()) {
+									g_Pipe.writeData.clear();
+									g_Pipe.writeData = g_Pipe.CCMD_ReplyToClient;
+									g_Pipe.CCMD_ReplyToClient.clear();
+								}
+								// Write Pipe Buffer
+								if (!g_Pipe.writeData.empty())
+								{
+									pipe_writeData = g_Pipe.writeData.c_str(); // Store the write data in a separate variable for logging, this allows us to clear the pipe buffer after writing without affecting the logged data.
+									g_Pipe.Write();
+								}
+							}
+							if (g_Pipe.pipeStatus.peekNoData) {
+								if (pipe_noDataFrameCount < pipe_noDataFrames) { pipe_noDataFrameCount++; }
+							}
+							else {
+								pipe_noDataFrameCount = 0;
+							}
+						} // end of if (pipe_readAndWrite) 
+					} // end of if (g_Pipe.CycleTimer(pipe_cycleTimeSetpoint))
+				} // end of if (pipe_enable)
+				pipe_open = g_Pipe.pipeStatus.open;
+				pipe_connected = g_Pipe.pipeStatus.connected;
+				pipe_latencyms = g_Pipe.pipeStatus.latency_ms;
+
+				// End Windows IPC Pipe + GZDoom API
+
 			}
 			// Update display, next frame, with current state.
 			I_StartTic ();
@@ -1277,37 +1400,9 @@ void D_DoomLoop ()
 				wantToRestart = false;
 				return;
 			}
-			// IPC Pipe + GZDoom API
-			// Clear Write Queue
-			if (!g_Pipe.writeQueue.empty())
-			{
-				g_Pipe.writeQueue.clear();
-				g_Pipe.pipeStatus.writeQueueSize = 0;
-			}
-			// Read
-			g_Pipe.Read();
 
-			// GZDoom API
-			// Process Read Data, check for Console Commands
-			if (!g_Pipe.readData.empty()) {
-				g_Pipe.ProcessPipeCommand(g_Pipe.readData);
-				g_Pipe.readData.clear();
-			}
-			// Send Console Command Reply to Pipe Write Buffer
-			if (!g_Pipe.CCMD_ReplyToClient.empty()) {
-				g_Pipe.writeData.clear();
-				g_Pipe.writeData = g_Pipe.CCMD_ReplyToClient;
-				g_Pipe.CCMD_ReplyToClient.clear();
-			}
-			// Write Pipe Buffer
-			if (!g_Pipe.writeData.empty())
-			{
-				g_Pipe.Write();
-				if (g_Pipe.pipeStatus.writeCompleted) {
-					g_Pipe.writeData.clear();
-				}
-			}
-			// End IPC Pipe + GZDoom API
+
+
 		}
 		catch (const CRecoverableError &error)
 		{
@@ -3722,9 +3817,13 @@ static int D_DoomMain_Internal (void)
 	I_DetectOS();
 
 	// +logfile gets checked too late to catch the full startup log in the logfile so do some extra check for it here.
+	// @JeremyTiggy: adding in a CVAR to capture if logging was stared with the commandline, and what filename it was.
+	
 	FString logfile = Args->TakeValue("+logfile");
 	if (logfile.IsNotEmpty())
 	{
+		log_startedWithCommandline = true; // @JeremyTiggy: Added so we can determine if logging is active without stopping it
+		log_filename = logfile.GetChars(); // @JeremyTiggy
 		execLogfile(logfile.GetChars());
 	}
 	else if (batchout != NULL && *batchout != 0)
