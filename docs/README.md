@@ -1,9 +1,11 @@
 GZDoom External Pipe API by JeremyTiggy
 
 ++ Version History ++
-v0.1	Initial Release
+v1.0	Fixed buffer overflow for command parameters
+		Added configuration .PK3
 v0.2	Removed warning about data validation for SET command. 
 		Added "Pull" system description. 
+v0.1	Initial Release
 
 ++ Summary ++
 External programs can now change or read the value of console variables (CVars) for extended ACS/ZScript functionality.
@@ -84,55 +86,8 @@ COMMAND <command 1>; <command 2>; …		Executing Command: "<command 1>; <command
 
 ++ Compiling ++
 1. Add 'externalpipe.cpp' and 'externalpipe.h' to the same folder as 'd_main.cpp'.
-2. Modify 'd_main.cpp' as follows:
-	a. Add '#include #include "externalpipe.h"' to the end of the 'HEADER FILES' region.
-	b. Add 'static ExternalPipe g_Pipe;' to the end of the 'PUBLIC FUNCTION PROTOTYPES' region.
-	c. Add the line 'g_Pipe.Close();' to the end of the function 'void D_ErrorCleanup ()'.
-	d. Add the line 'g_Pipe.Open("GZD"); int pipe_counter = 0;' before the 'for (;;)' loop in 'void D_DoomLoop()'.
-	e. Add the following lines of code after the line 'TryRunTics ();' in 'void D_DoomLoop ()':
-
-	// Windows IPC Pipe + GZDoom API
-	pipe_counter++;
-	if (pipe_counter > 0) // Adjust this value to change pipe read/write frequency
-	{
-		// Windows IPC Pipe
-		// Clear Write Queue
-		if (!g_Pipe.writeQueue.empty()) 
-		{
-			g_Pipe.writeQueue.clear();
-			g_Pipe.pipeStatus.writeQueueSize = 0;
-		}
-
-		// Windows IPC Pipe
-		// Read
-		g_Pipe.Read();
-		
-		// GZDoom API
-		// Process Read Data, check for Console Commands
-		if (!g_Pipe.readData.empty()) {
-			g_Pipe.ProcessPipeCommand(g_Pipe.readData);
-			g_Pipe.readData.clear();
-		}
-		// Send Console Command Reply to Pipe Write Buffer
-		if (!g_Pipe.CCMD_ReplyToClient.empty()) {
-			g_Pipe.writeData.clear();
-			g_Pipe.writeData = g_Pipe.CCMD_ReplyToClient;
-			g_Pipe.CCMD_ReplyToClient.clear();
-		}
-		// Windows IPC Pipe
-		// Write Pipe Buffer
-		if (!g_Pipe.writeData.empty()) 
-		{
-			g_Pipe.Write();
-			if (g_Pipe.pipeStatus.writeCompleted) {
-				g_Pipe.writeData.clear();
-			}
-		}
-		pipe_counter = 0; // reset counter
-	}//end if (pipe_counter > 0)
-	// End Windows IPC Pipe + GZDoom API
-	
-	f. Save the updated 'd_main.cpp', then compile.
+2. Add in the pipe logic from the included 'd_main.cpp' or just replace it if it is 4.14.4.
+3. Save the updated 'd_main.cpp', then compile.
 	
 ++ Sample Applications ++
 --- Powershell Script ---
@@ -145,7 +100,7 @@ The script runs best when executed as Administrator with the following command:
 	powershell -ExecutionPolicy Bypass -File <absolute filepath of the script>
 But, the script may run without Administrator privileges depending on your system configuration.
 You can type GET or SET commands, direct console commands, or use one of the other included demo functions.
-
+The API .PS1 file must be in the same directory as the example script.
 
 --- ACS Script Demo ---
 Included is a PK3 developed in SLADE, ExternalPipeAPI.pk3.
@@ -153,6 +108,8 @@ There are two demo ACS scripts included in the PK3.
  - API.acs: shows how to trigger an internal event when a CVar is changed via the Pipe API.
  - PlayerInfoCVARs.acs: shows how to populate player info that can be read by the client.
 
+--- GZDoom Menu PK3 ---
+Use the included ExternalPipeSettingsMenu.pk3 to adjust pipe settings or enable/disable the pipe.
 
 --- GZDoom.exe ---
 Included is a compliled version of the GZDoom.EXE for 4.14.2. Paste this into an existing installation of 4.14.2 to activate the pipe.
