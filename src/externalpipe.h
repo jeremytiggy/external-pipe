@@ -65,22 +65,22 @@ public:
     //std::string Read();
     bool Read();
 
+    bool Peek();
     bool IsValid();
-    bool IsConnected();
+    bool CheckIfPipeIsConnected();
     bool HasReadData();
     void Flush();
-
+    void MeasureLatency();
+    bool CycleTimer(int setpoint_ms);
     unsigned long ConsolePositionStart;
-    void AddToWriteQueue(const std::string& stringData);
     void ProcessPipeCommand(const std::string& command);
     //void ProcessCVarSet(const std::string& payload);
 
     std::string writeData = ""; // Data for Write() command
-    std::string writeQueue = "";
     std::string readData = "";  // Data from Read() command
     std::string CCMD_Command = "";
-    const unsigned long Max_CCMD_Arguments = 10;
-    std::string CCMD_argumentVector[10]; //argv from Console Command, ArgumentVector[]
+    const unsigned long Max_CCMD_Arguments = 100;
+    std::string CCMD_argumentVector[100]; //argv from Console Command, ArgumentVector[]
     unsigned long CCMD_argumentCount = 0; //argv.argc() from Console Command, ArgumentVector.ArgumentCount
     std::string CCMD_ReplyToClient = "";
 
@@ -91,7 +91,8 @@ public:
     std::string SET_CVar_Name = "";
     std::string SET_CVar_Value = "";
     std::string SET_CVar_ConsoleReturnString = "";
-    
+    bool logging = false;
+    bool loggingHigh = false;
     struct PipeState {
         void* pipeHandle; // HANDLE
         bool open;
@@ -109,10 +110,16 @@ public:
         bool readFileResult = false; // result of ReadFile
         unsigned long readFileReturnCode = 0; // error code from ReadFile
         bool writePending;
-        unsigned long writeQueueSize = 0;
         bool writeCompleted;
         bool readPending;
         bool readCompleted;
+		bool peekCompleted;
+        bool peekNoData;
+        bool peekError;
+		int latency_ms; // latency of the last completed operation in milliseconds
+		int timeSinceLastOperation_ms; // time since last completed operation in milliseconds
+        int lastOperation_timestamp_seconds = 0;
+        int lastOperation_timestamp_ms = 0;
         unsigned long PeekTotalBytesAvailable = 0;
         void* connectEvent = nullptr; // For Connect overlapped event
         void* writeEvent = nullptr;   // For Write overlapped event
@@ -128,13 +135,16 @@ private:
     const bool blocking = false;
     const bool WaitForCompletion = false; // if blocking, wait indefinitely for completion
     const bool overlappedIO = true;
-    const bool peekBeforeRead = true;
+    const bool peekBeforeRead = false;
     const bool peekRequiredForRead = true; // if true, HasReadData() must be true before Read()
     const bool appendCRLF = true;
-    const bool logging = false;
+    
     const std::string crlf = "\r\n";
-    unsigned long defaultReadSize = 4096; // default number of bytes to read if not peeking first
     unsigned long overlappedTimeout = 100; // milliseconds to wait for overlapped operations
+
+	int latency_timestamp_seconds_old = 0;
+	int latency_timestamp_milliseconds_old = 0;
+
 
     // Path
     std::string pipePath;
@@ -148,4 +158,7 @@ private:
     bool PrepareReadBuffer();
     bool FinalizeWriteOperation(bool success);
     bool FinalizeReadOperation(bool success);
+
 };
+
+static void LogPipeOperation(const bool enableLogging, const bool printToConsole , const std::string& pipePath, const std::string& operation, const std::string& message, unsigned long errorCode);
