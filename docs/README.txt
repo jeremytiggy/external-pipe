@@ -91,22 +91,14 @@ COMMAND <command 1>; <command 2>; …		Executing Command: "<command 1>; <command
 	
 ++ Sample Applications ++
 --- Powershell Script ---
-Included is a Windows Powershell script example showing 
-	 - how to connect to the GZDoom External Pipe API
-	 - how to formulate API commands
-	 - how to read responses from GZDoom
-Start GZDoom, then start or load a new game before you run the script.
+Included are Windows Powershell script examples showing 
+	 - how to connect to the GZDoom Named Pipe and test those particular features
+	 - how to send console commands to GZDoom thru the pipe
+Start GZDoom, then start or load a new game before you run either script.
 The script runs best when executed as Administrator with the following command:
 	powershell -ExecutionPolicy Bypass -File <absolute filepath of the script>
 But, the script may run without Administrator privileges depending on your system configuration.
-You can type GET or SET commands, direct console commands, or use one of the other included demo functions.
-The API .PS1 file must be in the same directory as the example script.
 
---- ACS Script Demo ---
-Included is a PK3 developed in SLADE, ExternalPipeAPI.pk3.
-There are two demo ACS scripts included in the PK3.
- - API.acs: shows how to trigger an internal event when a CVar is changed via the Pipe API.
- - PlayerInfoCVARs.acs: shows how to populate player info that can be read by the client.
 
 --- GZDoom Menu PK3 ---
 Use the included ExternalPipeSettingsMenu.pk3 to adjust pipe settings or enable/disable the pipe.
