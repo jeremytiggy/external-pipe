@@ -45,7 +45,7 @@ SET <New CVar Name> <Initial value>		"<cvar>" is "<initial value>"									Cvar 
 SET <Existing CVar Name> <new value>	"<cvar>" is "<new value>"										Cvar value successfully changed to <new value>
                                                                                                         from <current value>
 COMMAND <command string>				Executing Command: "<command string>"							Command passed to console
-COMMAND <command 1>; <command 2>; â€¦		Executing Command: "<command 1>; <command 2>; ..."				Multiple commands can be passed to the console
+COMMAND <command 1>; <command 2>; …		Executing Command: "<command 1>; <command 2>; ..."				Multiple commands can be passed to the console
                                                                                                         when separated by semi-colons
 
 */
