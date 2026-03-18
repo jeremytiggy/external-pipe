@@ -172,6 +172,8 @@ void ExternalPipe::HandleClientDisconnection(const std::string& operation, unsig
 
     LogPipeOperation(logging, loggingHigh, pipePath, operation, errorMsg, errorCode);
 
+	CancelPendingOperations();
+
     // Reset connection state
     pipeStatus.connected = false;
     pipeStatus.connectPending = false;
@@ -412,6 +414,10 @@ void ExternalPipe::Close()
     std::string operation = "Close";
     LogPipeOperation(logging, loggingHigh, pipePath, operation, std::string("Closing Pipe."));
 
+    // Cancel Pending IO
+	CancelPendingOperations();
+    
+	// Close the pipe handle if it's valid
     if ((HANDLE)pipeStatus.pipeHandle != INVALID_HANDLE_VALUE)
     {
         FlushFileBuffers((HANDLE)pipeStatus.pipeHandle);
@@ -423,13 +429,7 @@ void ExternalPipe::Close()
     {
         LogPipeOperation(logging, loggingHigh, pipePath, operation, std::string("pipeStatus.pipeHandle already INVALID_HANDLE_VALUE."));
 	}
-
-    // Cleanup all resources
-	CleanupConnectResources();
-	CleanupWriteResources();
-	CleanupReadResources();
     
-
     LogPipeOperation(logging, loggingHigh, pipePath, operation, std::string("Resetting state."));
     // Reset state
     pipeStatus.open = false;
@@ -497,6 +497,49 @@ void ExternalPipe::Flush()
     else
     {
         LogPipeOperation(logging, loggingHigh, pipePath, operation, "Cannot flush - invalid handle");
+    }
+}
+
+void ExternalPipe::CancelPendingOperations()
+{
+    HANDLE hPipe = (HANDLE)pipeStatus.pipeHandle;
+    if (hPipe == INVALID_HANDLE_VALUE) return;
+
+    // Cancel any outstanding I/O on this pipe
+    if (!CancelIoEx(hPipe, NULL)) {
+        DWORD err = GetLastError();
+        // If ERROR_NOT_FOUND, no I/O was pending – that’s fine.
+        if (err != ERROR_NOT_FOUND) {
+            LogPipeOperation(logging, loggingHigh, pipePath, "CancelPendingOperations",
+                "CancelIoEx failed", err);
+        }
+    }
+
+    // Wait briefly for cancellations to complete (optional, but recommended)
+    // We can wait on the event handles, but a simple Sleep(0) yields the CPU.
+    // Sleep(0);
+    if (pipeStatus.connectPending) {
+        WaitForSingleObject((HANDLE)pipeStatus.connectEvent, 1);
+    }
+    if (pipeStatus.writePending) {
+        WaitForSingleObject((HANDLE)pipeStatus.writeEvent, 1);
+    }
+    if (pipeStatus.readPending) {
+        WaitForSingleObject((HANDLE)pipeStatus.readEvent, 1);
+    }
+
+    // Clean up each pending operation’s resources
+    if (pipeStatus.connectPending) {
+        CleanupConnectResources();
+        pipeStatus.connectPending = false;
+    }
+    if (pipeStatus.writePending) {
+        CleanupWriteResources();
+        pipeStatus.writePending = false;
+    }
+    if (pipeStatus.readPending) {
+        CleanupReadResources();
+        pipeStatus.readPending = false;
     }
 }
 
@@ -815,6 +858,53 @@ bool ExternalPipe::Connect()
 
     HANDLE hPipe = (HANDLE)pipeStatus.pipeHandle;
 
+    // Pending COnnection
+    if (pipeStatus.connectPending)
+    {
+        LogPipeOperation(logging, loggingHigh, pipePath, operation, "Connection already pending. Checking for completion.");
+        if (overlappedIO)
+        {
+            DWORD bytesTransferred = 0;
+            DWORD waitTimeout = blocking ? INFINITE : 0;
+            DWORD waitResult = WaitForSingleObject((HANDLE)pipeStatus.connectEvent, waitTimeout);
+            if (waitResult == WAIT_OBJECT_0)
+            {
+                if (GetOverlappedResult(hPipe, static_cast<OVERLAPPED*>(pipeStatus.connectOverlapped), &bytesTransferred, FALSE))
+                {
+                    LogPipeOperation(logging, loggingHigh, pipePath, operation, "Pending connection completed successfully.");
+                    pipeStatus.connected = true;
+                    pipeStatus.connectPending = false;
+                    CleanupConnectResources();
+                    return true;
+                }
+                else
+                {
+                    DWORD err = GetLastError();
+                    LogPipeOperation(logging, loggingHigh, pipePath, operation, "Pending connection failed during GetOverlappedResult.", err);
+                    HandleClientDisconnection(operation, err);
+                    pipeStatus.connectPending = false;
+                    CleanupConnectResources();
+                    return false;
+                }
+            }
+            else if (waitResult == WAIT_TIMEOUT)
+            {
+                LogPipeOperation(logging, loggingHigh, pipePath, operation, "Pending connection still in progress (non-blocking mode).");
+                return false;
+            }
+            else
+            {
+                DWORD err = GetLastError();
+                LogPipeOperation(logging, loggingHigh, pipePath, operation, "Error while waiting for pending connection.", err);
+                HandleClientDisconnection(operation, err);
+                pipeStatus.connectPending = false;
+                CleanupConnectResources();
+                return false;
+			}
+        }
+        return false;
+	}
+    
     // Initialize overlapped structures if needed
     if (overlappedIO && ((pipeStatus.connectEvent == nullptr) || (pipeStatus.connectEvent == (void*)INVALID_HANDLE_VALUE)))
     {
@@ -862,34 +952,18 @@ bool ExternalPipe::Connect()
     case ERROR_IO_PENDING:
         LogPipeOperation(logging, loggingHigh, pipePath, operation, "Connection pending - waiting for completion");
         pipeStatus.connectPending = true;
-
-        if (overlappedIO)
-        {
-            DWORD bytesTransferred = 0;
-            DWORD waitTimeout = blocking ? INFINITE : overlappedTimeout;
-            DWORD waitResult = WaitForSingleObject((HANDLE)pipeStatus.connectEvent, waitTimeout);
-
-            if (waitResult == WAIT_OBJECT_0)
-            {
-                if (GetOverlappedResult(hPipe, connectOverlapped, &bytesTransferred, FALSE))
-                {
-                    pipeStatus.connected = true;
-                    pipeStatus.connectPending = false;
-                    CleanupConnectResources();
-                    return true;
-                }
-            }
-        }
         return false;
 
     case ERROR_NO_DATA:
     case ERROR_BROKEN_PIPE:
         HandleClientDisconnection(operation, lastError);
+        CleanupConnectResources();
         LogPipeOperation(logging, loggingHigh, pipePath, operation, "Client disconnected during connection attempt - need to reopen pipe");
         return false;
 
     default:
         LogPipeOperation(logging, loggingHigh, pipePath, operation, "Connection failed", lastError);
+        CleanupConnectResources();
         return false;
     }
 }
@@ -939,6 +1013,21 @@ bool ExternalPipe::Write()
 
     OVERLAPPED* writeOverlapped = static_cast<OVERLAPPED*>(pipeStatus.writeOverlapped);
 
+    if (pipeStatus.writePending) {
+        // Check completion of pending write
+        DWORD bytesTransferred;
+        if (GetOverlappedResult(hPipe, writeOverlapped, &bytesTransferred, FALSE)) {
+            pipeStatus.bytesWritten = bytesTransferred;
+            return FinalizeWriteOperation(true);
+        }
+        DWORD err = GetLastError();
+        if (err == ERROR_IO_INCOMPLETE) {
+            return false; // still pending
+		}
+        HandleClientDisconnection(operation, err);
+        return false;
+    }
+
     // Prepare data if this is a new write operation
     if (!pipeStatus.writePending)
     {
@@ -949,7 +1038,7 @@ bool ExternalPipe::Write()
         pipeStatus.writePending = true;
     }
 
-    // Perform the write operation
+        // Perform the write operation
     BOOL writeResult = WriteFile(hPipe, pipeStatus.bytesWriteFileBuffer,
         pipeStatus.bytesWriteFileBufferLength,
         &pipeStatus.bytesWritten, writeOverlapped);
@@ -1006,6 +1095,26 @@ bool ExternalPipe::Read()
         }
     }
 
+    if (pipeStatus.readPending) {
+        // Check completion of pending read
+        HANDLE hPipe = (HANDLE)pipeStatus.pipeHandle;
+        OVERLAPPED* readOverlapped = static_cast<OVERLAPPED*>(pipeStatus.readOverlapped);
+        DWORD bytesTransferred;
+        
+        if (GetOverlappedResult(hPipe, readOverlapped, &bytesTransferred, FALSE)) {
+            pipeStatus.bytesReceived = bytesTransferred;
+            return FinalizeReadOperation(true);
+        }
+        DWORD err = GetLastError();
+        if (err == ERROR_IO_INCOMPLETE) {
+            return false; // still pending
+        }
+        // Handle error
+        HandleClientDisconnection(operation, err);
+        return false;
+    }
+
+
     // Peek for data if configured
     BOOL needsToHaveDataToContinue = !overlappedIO || peekRequiredForRead;
     if (needsToHaveDataToContinue)
@@ -1056,6 +1165,8 @@ bool ExternalPipe::Read()
     // Prepare buffer if this is a new read operation
     std::string readPendingMessage = pipeStatus.readPending ? "Read is Pending." : "No Read is Pending.";
     LogPipeOperation(logging, loggingHigh, pipePath, operation, readPendingMessage);
+       
+
     if (!pipeStatus.readPending)
     {
         if (!PrepareReadBuffer())

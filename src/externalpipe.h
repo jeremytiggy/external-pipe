@@ -128,7 +128,7 @@ public:
         void* writeOverlapped = nullptr;
         void* readOverlapped = nullptr;
 
-    } pipeStatus;
+    } pipeStatus = {};
 
 private:
     //Configuration
@@ -158,6 +158,7 @@ private:
     bool PrepareReadBuffer();
     bool FinalizeWriteOperation(bool success);
     bool FinalizeReadOperation(bool success);
+    void CancelPendingOperations();
 
 };
 
