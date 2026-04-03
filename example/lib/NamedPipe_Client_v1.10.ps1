@@ -79,7 +79,7 @@ function NamedPipe_Client_PeekAtServer {
 		return $bytesAvailable
 	}
 	else {
-        Write-Host "[NamedPipe_Client_PeekAtServer]: WARNING - Connected, but no data available (Bytes available: $bytesAvailable)" -ForegroundColor Yellow
+        if ($Global:NamedPipe_Client_Debug -eq $true) { Write-Host "[NamedPipe_Client_PeekAtServer]: WARNING - Connected, but no data available (Bytes available: $bytesAvailable)" -ForegroundColor Yellow }
 		return 0
 	}
 
@@ -207,92 +207,107 @@ function NamedPipe_Client_ConnectToServer {
 }
 Write-Host "[NamedPipe_Client] function NamedPipe_Client_ConnectToServer registered" -ForegroundColor Green
 function NamedPipe_Client_Startup {
-    if ($Global:NamedPipe_Client_Debug -eq $true) { 
-		Write-Host "[NamedPipe_Client_Startup]: Pipe: $($Global:NamedPipe_Server_Name)" -ForegroundColor Cyan
-		Write-Host "[NamedPipe_Client_Startup]: Connected: $($Global:NamedPipe_Client_ConnectedToServer)" -ForegroundColor Cyan
-		Write-Host "[NamedPipe_Client_Startup]: Process: $($Global:NamedPipe_Server_Process)" -ForegroundColor Cyan
-	}
+    
     $ProcessName = $Global:NamedPipe_Server_Process
 	$PipeName = $Global:NamedPipe_Server_Name
-    if (Get-Process -Name $ProcessName -ErrorAction SilentlyContinue)
-    {
-        Write-Host "[NamedPipe_Client_Startup]: $ProcessName is running" -ForegroundColor Green
-        if ($Global:NamedPipe_Client_ConnectedToServer -ne $true) {
-            Write-Host "[NamedPipe_Client_Startup]: Would you like to OPEN the named pipe, change the TARGET pipe name before opening, or work OFFLINE?"
-        }
-    }
-    else
-    {
-        Write-Host "[NamedPipe_Client_Startup]: $ProcessName is not running" -ForegroundColor Red
-        if ($Global:NamedPipe_Client_ConnectedToServer -ne $true) {
-            Write-Host "[NamedPipe_Client_Startup]: Would you like to attempt to OPEN the named pipe, change the TARGET pipe name before opening, or work OFFLINE?"
-        }
-        
-    }
-    if ($Global:NamedPipe_Client_ConnectedToServer -ne $true) {
-        Write-Host -NoNewLine "[NamedPipe_Client_Startup] (open|target=$($PipeName)@$($ProcessName)|offline|exit)> "
-        $cmd = Read-Host
-        if ($cmd -eq '') { exit 1 }
-        if ($cmd -ne '') {
-	        if ($cmd -eq 'exit') { exit 1 }
-	        elseif (($cmd -eq 'open') -or ($cmd -eq 'target')) { 
-                if ($cmd -eq 'target') {
-					$makeEdits = $true
-					while ($makeEdits -eq $true) {
-						Write-Host "[NamedPipe_Client_Startup]: Enter target Process & Pipe. Leave blank to use existing value" -ForegroundColor White
-						Write-Host -NoNewLine "[$($ProcessName)] Enter Process Name without extension: > "
-						$NewProcessName = Read-Host
-						if ($NewProcessName -eq '') { $NewProcessName = $ProcessName }
-						Write-Host "[NamedPipe_Client_Startup]: Enter Pipe Name. Leave blank to use existing value" -ForegroundColor White
-						Write-Host -NoNewLine "[$($PipeName)] Enter Pipe Name: > "
-						$NewPipeName = Read-Host
-						if ($NewPipeName -eq '') { $NewPipeName = $PipeName }
-						Write-Host "[NamedPipe_Client_Startup]: Proposed New Target: $($NewPipeName)@$($NewProcessName)."
-						if (Get-Process -Name $NewProcessName -ErrorAction SilentlyContinue)
-						{ Write-Host "[NamedPipe_Client_Startup]: $NewProcessName is running" -ForegroundColor Green }
-						else { Write-Host "[NamedPipe_Client_Startup]: $NewProcessName is not running" -ForegroundColor Yellow }
-						Write-Host "[NamedPipe_Client_Startup]: CONFIRM and open connection, EDIT pipe & process, or DISCARD changes?"
-						Write-Host -NoNewLine "[NamedPipe_Client_Startup]: (confirm|edit|discard)> "
-						$reviewEditsDecision = Read-Host
-						if ($reviewEditsDecision -eq 'confirm') {
-							$Global:NamedPipe_Server_Process = $NewProcessName
-							$Global:NamedPipe_Server_Name = $NewPipeName
-							Write-Host "[NamedPipe_Client_Startup]: Applying changes. Using New Target: $($NewPipeName)@$($NewProcessName)" -ForegroundColor Yellow
-							$makeEdits = $false
-						}
-						elseif ($reviewEditsDecision -eq 'edit') {
-							$ProcessName = $NewProcessName
-							$PipeName = $NewPipeName
-							$makeEdits = $true
-						}
-						else {
-							#discard or invalid entry
-							$ProcessName = $Global:NamedPipe_Server_Process
-							$PipeName = $Global:NamedPipe_Server_Name
-							Write-Host "[NamedPipe_Client_Startup]: Discarding changes. Using Initial Target: $($PipeName)@$($ProcessName)" -ForegroundColor Yellow
-							$makeEdits = $false
-						}
-						#Loop if $makeEdits = $true (edit)
-					}
+	
+	$stillTryingToConnect = $true
+	while ($stillTryingToConnect) { 
+		# Check if the process is running
+		$processRunning = $false
+		if (Get-Process -Name $ProcessName -ErrorAction SilentlyContinue) { $processRunning = $true }
+		Write-Host "[NamedPipe_Client_Startup]: Pipe: $($Global:NamedPipe_Server_Name)" -ForegroundColor Cyan
+		
+		Write-Host -NoNewLine "[NamedPipe_Client_Startup]: Process: $($Global:NamedPipe_Server_Process) - " -ForegroundColor Cyan
+		if ($processRunning) { Write-Host "RUNNING" -ForegroundColor Green }
+		else { Write-Host "NOT RUNNING" -ForegroundColor Red }	
+		
+		$connectWithoutPrompt = $processRunning -and ($Global:NamedPipe_Client_Debug -ne $true)
+		# If the debug is turned off, and the process is running, go ahead and try to connect
+		if ($connectWithoutPrompt) {
+			try { 
+				$Global:NamedPipe_Client_ConnectedToServer = NamedPipe_Client_ConnectToServer 
+				if ($Global:NamedPipe_Client_ConnectedToServer) { 
+					Write-Host "[NamedPipe_Client_Startup]: Connected to Pipe $($Global:NamedPipe_Server_Name) successfully!" -ForegroundColor Green
 				}
-				
-				# Open Pipe Connection
-                try {
-                    $Global:NamedPipe_Client_ConnectedToServer = NamedPipe_Client_ConnectToServer
-                } catch {
-                    Write-Host "[NamedPipe_Client_Startup]: ERROR. Failed to connect to pipe: $($_.Exception.Message)" -ForegroundColor Red
-                    exit 1
-                }        
-            }
-            elseif ($cmd -eq 'offline') { 
-                Write-Host "[NamedPipe_Client_Startup]: Continuing in offline mode. No Named Pipe Communications initiated." -ForegroundColor Yellow
-            }
-	        else { 
-                Write-Host '[NamedPipe_Client_Startup]: Exiting...' 
-                exit 1
-            }
-        }
-    }
+			} 
+			catch {	Write-Host "[NamedPipe_Client_Startup]: ERROR. Failed to connect to pipe: $($_.Exception.Message)" -ForegroundColor Red }
+			$stillTryingToConnect = $Global:NamedPipe_Client_ConnectedToServer -eq $false
+		}
+		Write-Host "[NamedPipe_Client_Startup]: Connected: $($Global:NamedPipe_Client_ConnectedToServer)" -ForegroundColor Cyan
+		
+		# If the pipe didn't connect, or if debugging is enabled...
+		if ($Global:NamedPipe_Client_ConnectedToServer -ne $true) {
+			Write-Host "[NamedPipe_Client_Startup]: Would you like to attempt to OPEN the named pipe $($PipeName), change the TARGET pipe name before opening, or work OFFLINE?"
+			Write-Host -NoNewLine "[NamedPipe_Client_Startup] (open|target=$($PipeName)@$($ProcessName)|offline|exit)> "
+			$cmd = Read-Host
+			if ($cmd -eq '') { exit 1 }
+			if ($cmd -ne '') {
+				if ($cmd -eq 'exit') { exit 1 }
+				elseif (($cmd -eq 'open') -or ($cmd -eq 'target')) { 
+					if ($cmd -eq 'target') {
+						$makeEdits = $true
+						while ($makeEdits -eq $true) {
+							Write-Host "[NamedPipe_Client_Startup]: Enter target Process & Pipe. Leave blank to use existing value" -ForegroundColor White
+							Write-Host -NoNewLine "[$($ProcessName)] Enter Process Name without extension: > "
+							$NewProcessName = Read-Host
+							if ($NewProcessName -eq '') { $NewProcessName = $ProcessName }
+							Write-Host "[NamedPipe_Client_Startup]: Enter Pipe Name. Leave blank to use existing value" -ForegroundColor White
+							Write-Host -NoNewLine "[$($PipeName)] Enter Pipe Name: > "
+							$NewPipeName = Read-Host
+							if ($NewPipeName -eq '') { $NewPipeName = $PipeName }
+							Write-Host "[NamedPipe_Client_Startup]: Proposed New Target: $($NewPipeName)@$($NewProcessName)."
+							if (Get-Process -Name $NewProcessName -ErrorAction SilentlyContinue)
+							{ Write-Host "[NamedPipe_Client_Startup]: $NewProcessName is running" -ForegroundColor Green }
+							else { Write-Host "[NamedPipe_Client_Startup]: $NewProcessName is not running" -ForegroundColor Yellow }
+							Write-Host "[NamedPipe_Client_Startup]: CONFIRM and open connection, EDIT pipe & process, or DISCARD changes?"
+							Write-Host -NoNewLine "[NamedPipe_Client_Startup]: (confirm|edit|discard)> "
+							$reviewEditsDecision = Read-Host
+							if ($reviewEditsDecision -eq 'confirm') {
+								$Global:NamedPipe_Server_Process = $NewProcessName
+								$Global:NamedPipe_Server_Name = $NewPipeName
+								Write-Host "[NamedPipe_Client_Startup]: Applying changes. Using New Target: $($NewPipeName)@$($NewProcessName)" -ForegroundColor Yellow
+								$makeEdits = $false
+							}
+							elseif ($reviewEditsDecision -eq 'edit') {
+								$ProcessName = $NewProcessName
+								$PipeName = $NewPipeName
+								$makeEdits = $true
+							}
+							else {
+								#discard or invalid entry
+								$ProcessName = $Global:NamedPipe_Server_Process
+								$PipeName = $Global:NamedPipe_Server_Name
+								Write-Host "[NamedPipe_Client_Startup]: Discarding changes. Using Initial Target: $($PipeName)@$($ProcessName)" -ForegroundColor Yellow
+								$makeEdits = $false
+							}
+							#Loop if $makeEdits = $true (edit)
+						}
+					}
+					
+					# Open Pipe Connection
+					try {
+						$Global:NamedPipe_Client_ConnectedToServer = NamedPipe_Client_ConnectToServer
+						$stillTryingToConnect = ($Global:NamedPipe_Client_ConnectedToServer -ne $true)
+						
+					} catch {
+						Write-Host "[NamedPipe_Client_Startup]: ERROR. Failed to connect to pipe: $($_.Exception.Message)" -ForegroundColor Red
+						$stillTryingToConnect = $true
+					}	
+				}
+				elseif ($cmd -eq 'offline') { 
+					Write-Host "[NamedPipe_Client_Startup]: Continuing in offline mode. No Named Pipe Communications initiated." -ForegroundColor Yellow
+					$stillTryingToConnect = $false
+				}
+				else { 
+					Write-Host '[NamedPipe_Client_Startup]: Exiting...' 
+					$stillTryingToConnect = $false
+					exit 1
+				}
+			} #end of if (-ne '')
+			
+		}
+	} #end while still trying to connect
 }
 Write-Host "[NamedPipe_Client] function NamedPipe_Client_Startup registered" -ForegroundColor Green
 # Windows IPC Named Pipe Client Definitions^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
