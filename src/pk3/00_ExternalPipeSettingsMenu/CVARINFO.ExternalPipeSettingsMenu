@@ -1,0 +1,1 @@
+server noarchive bool		CV_b_menuGrayedOut = false;

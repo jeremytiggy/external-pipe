@@ -1,0 +1,54 @@
+OptionMenu "ExternalPipe"
+{
+	Title 					"External Pipe Options"
+	StaticText 				"--- Pipe Status (Read-Only) ---"
+	Option					"Pipe Logic","pipe_enabled","DisabledEnabled","CV_b_menuGrayedOut"
+	Option					"Server Connections", "pipe_open","ClosedOpen","CV_b_menuGrayedOut"
+	Option					"Client Connections", "pipe_connected","DisconnectedConnected","CV_b_menuGrayedOut"
+	Option					"Log Pipe Operations", "pipe_log", "DisabledEnabled","pipe_enabled"
+	Option					"Pipe Operation Log Destination","pipe_logConsole","logfileConsole", "pipe_enabled"
+	Option					"+Logfile present in command line","log_startedWithCommandline","AbsentPresent","CV_b_menuGrayedOut"
+	TextField				"Logfile Name provided in command line [Read-Only]","log_filename","CV_b_menuGrayedOut"
+	Command					"> Print Logfile Name To Console <","get log_filename"
+	NumberField 			"Current Latency (milliseconds) [Read-Only]","pipe_latencyms",0,60000,1,"CV_b_menuGrayedOut"
+	TextField				"Last Data From Client","pipe_readData","CV_b_menuGrayedOut"
+	TextField				"Last Data To Client","pipe_writeData","CV_b_menuGrayedOut"
+	Command					"> Print Client Data To Console <","get pipe_readData;get pipe_writeData"
+	StaticText 				""
+	SafeCommand 			"!> Toggle Pipe Enable <!", "toggle pipe_enable", "This will Enable/Disable the Pipe. Good for clearing Pipe communication errors."
+	StaticText 				" "
+	StaticText 				"--- Cycle Timers (Ticks) ---"
+	NumberField 			"Pipe Disconnected, Attempt to Connect","pipe_cycleTicksDisconnected",1,175,1
+	NumberField 			"Pipe Connected, Fresh Data","pipe_cycleTicksConnected",1,35,1
+	NumberField 			"Pipe Connected, Idle","pipe_cycleTicksNoData",1,35,1
+	NumberField 			"Idle Threshold (How many cycles without new data)","pipe_noDataFrames",1,100,1
+}
+OptionValue "DisabledEnabled"
+{
+	0, "Disabled"
+	1, "Enabled"
+}
+OptionValue "ClosedOpen"
+{
+	0, "Closed"
+	1, "Open"
+}
+OptionValue "DisconnectedConnected"
+{
+	0, "Disconnected"
+	1, "Connected"
+}
+OptionValue "AbsentPresent"
+{
+	0, "Absent"
+	1, "Present"
+}
+OptionValue "logfileConsole"
+{
+	0, "Logfile Only"
+	1, "Console Message & Logfile"
+}
+AddOptionMenu "OptionsMenu"
+{
+	Submenu "External Pipe Options", "ExternalPipe"
+}
