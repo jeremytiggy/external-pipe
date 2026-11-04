@@ -1,0 +1,52 @@
+OptionMenu "ExternalPipeDebug"
+{
+	Title					"Pipe Debug Menu"
+	StaticText 				" "
+	Option					"Logging", "pipe_log", "DisabledEnabled","pipe_enabled"
+	Option					"Output","pipe_logConsole","logfileConsole", "pipe_enabled"
+	StaticText 				" "
+	StaticText				"Raw Data"
+	TextField				"RXD","pipe_readData","CV_b_menuGrayedOut_EPSM"
+	TextField				"TX","pipe_writeData","CV_b_menuGrayedOut_EPSM"
+	StaticText 				" "
+	StaticText 				"Timing (Ticks)"
+	NumberField 			"Disconnected","pipe_cycleTicksDisconnected",1,175,1
+	NumberField 			"Active","pipe_cycleTicksConnected",1,35,1
+	NumberField 			"Idle","pipe_cycleTicksNoData",1,35,1
+	NumberField 			"No Frames","pipe_noDataFrames",1,100,1	
+	StaticText				" "
+	Command					"Print Raw Data to Console...","get pipe_readData;get pipe_writeData"
+}
+OptionMenu "ExternalPipe"
+{
+	Title 					"Pipe Options"
+	StaticText 				" "
+	TextField				"Name","pipe_name","CV_b_menuGrayedOut_EPSM"
+	Option					"Logic","pipe_enabled","DisabledEnabled","CV_b_menuGrayedOut_EPSM"
+	Option					"Server", "pipe_open","ClosedOpen","CV_b_menuGrayedOut_EPSM"
+	Option					"Client", "pipe_connected","DisconnectedConnected","CV_b_menuGrayedOut_EPSM"
+	NumberField 			"Latency (ms)","pipe_latencyms",0,60000,1,"CV_b_menuGrayedOut_EPSM"
+	StaticText 				" "
+	SafeCommand 			"Restart Pipe...", "set pipe_enable 0;wait 10;set pipe_enable 1"
+	Submenu "Debugging Menu", "ExternalPipeDebug"
+}
+OptionValue "DisabledEnabled"
+{
+	0, "Disabled"
+	1, "Enabled"
+}
+OptionValue "ClosedOpen"
+{
+	0, "Closed"
+	1, "Open"
+}
+OptionValue "DisconnectedConnected"
+{
+	0, "Disconnected"
+	1, "Connected"
+}
+OptionValue "logfileConsole"
+{
+	0, "Logfile Only"
+	1, "Console Message & Logfile"
+}

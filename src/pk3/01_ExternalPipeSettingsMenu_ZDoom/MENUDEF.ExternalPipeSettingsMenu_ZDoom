@@ -1,0 +1,4 @@
+AddOptionMenu "OptionsMenu"
+{
+	Submenu "External Pipe Options", "ExternalPipe"
+}
