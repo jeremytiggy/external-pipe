@@ -1,6 +1,7 @@
 ZDoom External Pipe API by JeremyTiggy
 
 ++ Version History ++
+v1.4    Added UZDoom v5.0.3
 v1.3	Added UZDoom, Zandronum
 		Added command line option "+pipe_nameUnique 1"
 		Changed from GZDoom to Zdoom
@@ -119,9 +120,10 @@ COMMAND <command 1>; <command 2>; …		Executing Command: "<command 1>; <command
 
 
 ++ Compiling ++
-1. Add 'externalpipe.cpp' and 'externalpipe.h' to the same folder as 'd_main.cpp'.
-2. Add in the pipe logic from the included 'd_main.cpp'
-3. Save the updated 'd_main.cpp', then compile.
+1. Follow instructions for compiling the engine from the source GitHub page, stop after CMake has created the project file.
+2. Open the project file, Copy 'externalpipe.cpp' and 'externalpipe.h' to the same folder as 'd_main.cpp'. Add them to the Build profile.
+3. Replace the 'd_main.cpp' file contents with the appropriate file matching the engine and build version.
+3. Compile.
 	
 ++ Applications ++
 --- Powershell Script ---
@@ -146,6 +148,7 @@ When using the ExternalPipeSettingsMenu PK3 files, please make sure the load ord
 Included are compiled executables, all running the External Pipe process.
  - GZDoom 4.14.2
  - UZDoom 4.14.3
+ - UZDoom 5.0.4
  - Zandronum 3.2.1
 	
 ++ Credits ++
